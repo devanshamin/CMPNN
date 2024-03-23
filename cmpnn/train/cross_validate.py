@@ -1,7 +1,3 @@
-import warnings
-warnings.filterwarnings('ignore')
-from rdkit import RDLogger  
-RDLogger.DisableLog('rdApp.*')  
 from argparse import Namespace
 from logging import Logger
 import os
@@ -9,13 +5,10 @@ from typing import Tuple
 
 import numpy as np
 
-from cmpnn.train.run_training import run_training
+from .run_training import run_training
 from cmpnn.data.utils import get_task_names
 from cmpnn.utils import makedirs
-from cmpnn.parsing import parse_train_args, modify_train_args
-from cmpnn.utils import create_logger
-from cmpnn.parsing import parse_predict_args
-from cmpnn.train import make_predictions
+
 
 def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float]:
     """k-fold cross validation"""
@@ -59,11 +52,3 @@ def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float
                  f'{np.nanmean(all_scores[:, task_num]):.6f} +/- {np.nanstd(all_scores[:, task_num]):.6f}')
 
     return mean_score, std_score
-
-
-if __name__ == '__main__':
-    args = parse_train_args()
-    modify_train_args(args)
-    logger = create_logger(name='train', save_dir=args.save_dir, quiet=args.quiet)
-    mean_auc_score, std_auc_score = cross_validate(args, logger)
-    print(f'Results: {mean_auc_score:.5f} +/- {std_auc_score:.5f}')

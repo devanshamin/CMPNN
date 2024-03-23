@@ -9,13 +9,13 @@ from typing import Tuple
 
 import numpy as np
 
-from chemprop.train.run_training import run_training
-from chemprop.data.utils import get_task_names
-from chemprop.utils import makedirs
-from chemprop.parsing import parse_train_args, modify_train_args
-from chemprop.utils import create_logger
-from chemprop.parsing import parse_predict_args
-from chemprop.train import make_predictions
+from cmpnn.train.run_training import run_training
+from cmpnn.data.utils import get_task_names
+from cmpnn.utils import makedirs
+from cmpnn.parsing import parse_train_args, modify_train_args
+from cmpnn.utils import create_logger
+from cmpnn.parsing import parse_predict_args
+from cmpnn.train import make_predictions
 
 def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float]:
     """k-fold cross validation"""
