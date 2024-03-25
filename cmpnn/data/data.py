@@ -88,6 +88,9 @@ class MoleculeDatapoint:
         :param targets: A list of floats containing the targets.
         """
         self.targets = targets
+    
+    def __repr__(self) -> str:
+        return f"MoleculeDatapoint(smiles='{self.smiles}', targets={self.targets}, features={self.features})"
 
 
 class MoleculeDataset(Dataset):
@@ -239,3 +242,6 @@ class MoleculeDataset(Dataset):
         :return: A MoleculeDatapoint if an int is provided or a list of MoleculeDatapoints if a slice is provided.
         """
         return self.data[item]
+
+    def __repr__(self) -> str:
+        return f"MoleculeDataset({len(self)})"

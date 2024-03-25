@@ -20,6 +20,8 @@ ATOM_FEATURES = {
         Chem.rdchem.HybridizationType.SP3D,
         Chem.rdchem.HybridizationType.SP3D2
     ],
+    # IsAromatic
+    # Mass
 }
 
 # Distance feature sizes
@@ -42,21 +44,13 @@ def clear_cache():
     SMILES_TO_GRAPH = {}
 
 
-def get_atom_fdim(args: Namespace) -> int:
-    """
-    Gets the dimensionality of atom features.
-
-    :param: Arguments.
-    """
+def get_atom_fdim() -> int:
+    """Gets the dimensionality of atom features."""
     return ATOM_FDIM
 
 
-def get_bond_fdim(args: Namespace) -> int:
-    """
-    Gets the dimensionality of bond features.
-
-    :param: Arguments.
-    """
+def get_bond_fdim() -> int:
+    """Gets the dimensionality of bond features."""
     return BOND_FDIM
 
 
@@ -84,14 +78,18 @@ def atom_features(atom: Chem.rdchem.Atom, functional_groups: List[int] = None) -
     :param functional_groups: A k-hot vector indicating the functional groups the atom belongs to.
     :return: A list containing the atom features.
     """
-    features = onek_encoding_unk(atom.GetAtomicNum() - 1, ATOM_FEATURES['atomic_num']) + \
-           onek_encoding_unk(atom.GetTotalDegree(), ATOM_FEATURES['degree']) + \
-           onek_encoding_unk(atom.GetFormalCharge(), ATOM_FEATURES['formal_charge']) + \
-           onek_encoding_unk(int(atom.GetChiralTag()), ATOM_FEATURES['chiral_tag']) + \
-           onek_encoding_unk(int(atom.GetTotalNumHs()), ATOM_FEATURES['num_Hs']) + \
-           onek_encoding_unk(int(atom.GetHybridization()), ATOM_FEATURES['hybridization']) + \
-           [1 if atom.GetIsAromatic() else 0] + \
-           [atom.GetMass() * 0.01]  # scaled to about the same range as other features
+    features = (
+        onek_encoding_unk(atom.GetAtomicNum() - 1, ATOM_FEATURES["atomic_num"])
+        + onek_encoding_unk(atom.GetTotalDegree(), ATOM_FEATURES["degree"])
+        + onek_encoding_unk(atom.GetFormalCharge(), ATOM_FEATURES["formal_charge"])
+        + onek_encoding_unk(int(atom.GetChiralTag()), ATOM_FEATURES["chiral_tag"])
+        + onek_encoding_unk(int(atom.GetTotalNumHs()), ATOM_FEATURES["num_Hs"])
+        + onek_encoding_unk(
+            int(atom.GetHybridization()), ATOM_FEATURES["hybridization"]
+        )
+        + [1 if atom.GetIsAromatic() else 0]
+        + [atom.GetMass() * 0.01]  # Scaled to about the same range as other features
+    )
     if functional_groups is not None:
         features += functional_groups
     return features
@@ -136,50 +134,39 @@ class MolGraph:
     - b2revb: A mapping from a bond index to the index of the reverse bond.
     """
 
-    def __init__(self, smiles: str, args: Namespace):
+    def __init__(self, smiles: str, atom_messages: bool):
         """
         Computes the graph structure and featurization of a molecule.
 
         :param smiles: A smiles string.
-        :param args: Arguments.
+        :param atom_messages: Use messages on atoms instead of messages on bonds.
         """
+
         self.smiles = smiles
-        self.n_atoms = 0  # number of atoms
-        self.n_bonds = 0  # number of bonds
-        self.f_atoms = []  # mapping from atom index to atom features
+        mol = Chem.MolFromSmiles(smiles) # Convert smiles to molecule
+        self.f_atoms = [atom_features(atom) for atom in mol.GetAtoms()]  # mapping from atom index to atom features
         self.f_bonds = []  # mapping from bond index to concat(in_atom, bond) features
-        self.a2b = []  # mapping from atom index to incoming bond indices
+        self.n_atoms = len(self.f_atoms)  # number of atoms
+        self.n_bonds = 0  # number of bonds
+        # Mapping from atom index to incoming bond indices
+        # Initialize atom to bond mapping for each atom
+        self.a2b = [[] for _ in range(self.n_atoms)] # Shape: [n_atoms, n_bonds]  
         self.b2a = []  # mapping from bond index to the index of the atom the bond is coming from
         self.b2revb = []  # mapping from bond index to the index of the reverse bond
-        self.bonds = []
-        # Convert smiles to molecule
-        mol = Chem.MolFromSmiles(smiles)
-
-        # fake the number of "atoms" if we are collapsing substructures
-        self.n_atoms = mol.GetNumAtoms()
-        
-        # Get atom features
-        for i, atom in enumerate(mol.GetAtoms()):
-            self.f_atoms.append(atom_features(atom))
-        self.f_atoms = [self.f_atoms[i] for i in range(self.n_atoms)]
-
-        for _ in range(self.n_atoms):
-            self.a2b.append([])
+        self.bonds = [] # Shape: [n_atoms, 2] 
 
         # Get bond features
         for a1 in range(self.n_atoms):
             for a2 in range(a1 + 1, self.n_atoms):
-                bond = mol.GetBondBetweenAtoms(a1, a2)
-
-                if bond is None:
+                if (bond := mol.GetBondBetweenAtoms(a1, a2)) is None:
                     continue
 
                 f_bond = bond_features(bond)
-
-                if args.atom_messages:
+                if atom_messages:
                     self.f_bonds.append(f_bond)
                     self.f_bonds.append(f_bond)
                 else:
+                    # Bond features size = ATOM_FDIM + BOND_FDIM
                     self.f_bonds.append(self.f_atoms[a1] + f_bond)
                     self.f_bonds.append(self.f_atoms[a2] + f_bond)
 
@@ -223,12 +210,12 @@ class BatchMolGraph:
     - a2a: (Optional): A mapping from an atom index to neighboring atom indices.
     """
 
-    def __init__(self, mol_graphs: List[MolGraph], args: Namespace):
+    def __init__(self, mol_graphs: List[MolGraph], atom_messages: bool):
         self.smiles_batch = [mol_graph.smiles for mol_graph in mol_graphs]
         self.n_mols = len(self.smiles_batch)
 
-        self.atom_fdim = get_atom_fdim(args)
-        self.bond_fdim = get_bond_fdim(args) + (not args.atom_messages) * self.atom_fdim # * 2
+        self.atom_fdim = get_atom_fdim()
+        self.bond_fdim = get_bond_fdim() + (not atom_messages) * self.atom_fdim # * 2
 
         # Start n_atoms and n_bonds at 1 b/c zero padding
         self.n_atoms = 1  # number of atoms (start at 1 b/c need index 0 as padding)
@@ -315,13 +302,17 @@ class BatchMolGraph:
         return self.a2a
 
 
-def mol2graph(smiles_batch: List[str],
-              args: Namespace) -> BatchMolGraph:
+def mol2graph(
+    smiles_batch: List[str],
+    no_cache: bool = False,
+    atom_messages: bool = False
+) -> BatchMolGraph:
     """
     Converts a list of SMILES strings to a BatchMolGraph containing the batch of molecular graphs.
 
     :param smiles_batch: A list of SMILES strings.
-    :param args: Arguments.
+    :param no_cache: Flag to turn on/off caching of the mol2graph computation
+    :param atom_messages: Use messages on atoms instead of messages on bonds.
     :return: A BatchMolGraph containing the combined molecular graph for the molecules
     """
     mol_graphs = []
@@ -329,9 +320,9 @@ def mol2graph(smiles_batch: List[str],
         if smiles in SMILES_TO_GRAPH:
             mol_graph = SMILES_TO_GRAPH[smiles]
         else:
-            mol_graph = MolGraph(smiles, args)
-            if not args.no_cache:
+            mol_graph = MolGraph(smiles, atom_messages)
+            if not no_cache:
                 SMILES_TO_GRAPH[smiles] = mol_graph
         mol_graphs.append(mol_graph)
     
-    return BatchMolGraph(mol_graphs, args)
+    return BatchMolGraph(mol_graphs, atom_messages)

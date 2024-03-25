@@ -57,7 +57,7 @@ class MPNEncoder(nn.Module):
         self.lr = nn.Linear(self.hidden_size*3, self.hidden_size, bias=self.bias)
         
 
-    def forward(self,mol_graph: BatchMolGraph, features_batch=None) -> torch.FloatTensor:
+    def forward(self, mol_graph: BatchMolGraph, features_batch=None) -> torch.FloatTensor:
 
         f_atoms, f_bonds, a2b, b2a, b2revb, a_scope, b_scope, bonds = mol_graph.get_components()
         if self.args.cuda or next(self.parameters()).is_cuda:
@@ -75,14 +75,13 @@ class MPNEncoder(nn.Module):
         input_bond = self.act_func(input_bond)
         # Message passing
         for depth in range(self.depth - 1):
-            agg_message = index_select_ND(message_bond, a2b)
-            agg_message = agg_message.sum(dim=1) * agg_message.max(dim=1)[0]
+            agg_message = index_select_ND(message_bond, a2b) # num_atoms x max_num_bonds x hidden_size
+            agg_message = agg_message.sum(dim=1) * agg_message.max(dim=1)[0] # num_atoms x hidden_size
             message_atom = message_atom + agg_message
             
             # directed graph
-            rev_message = message_bond[b2revb]  # num_bonds x hidden
-            message_bond = message_atom[b2a] - rev_message  # num_bonds x hidden
-            
+            rev_message = message_bond[b2revb]  # num_bonds x hidden_size
+            message_bond = message_atom[b2a] - rev_message  # num_bonds x hidden_size
             message_bond = self._modules[f'W_h_{depth}'](message_bond)
             message_bond = self.dropout_layer(self.act_func(input_bond + message_bond))
         
@@ -91,8 +90,8 @@ class MPNEncoder(nn.Module):
         agg_message = self.lr(torch.cat([agg_message, message_atom, input_atom], 1))
         agg_message = self.gru(agg_message, a_scope)
         
-        atom_hiddens = self.act_func(self.W_o(agg_message))  # num_atoms x hidden
-        atom_hiddens = self.dropout_layer(atom_hiddens)  # num_atoms x hidden
+        atom_hiddens = self.act_func(self.W_o(agg_message))  # num_atoms x hidden_size
+        atom_hiddens = self.dropout_layer(atom_hiddens)  # num_atoms x hidden_size
         
         # Readout
         mol_vecs = []
@@ -158,8 +157,8 @@ class MPN(nn.Module):
                  graph_input: bool = False):
         super(MPN, self).__init__()
         self.args = args
-        self.atom_fdim = atom_fdim or get_atom_fdim(args)
-        self.bond_fdim = bond_fdim or get_bond_fdim(args) + \
+        self.atom_fdim = atom_fdim or get_atom_fdim()
+        self.bond_fdim = bond_fdim or get_bond_fdim() + \
                             (not args.atom_messages) * self.atom_fdim # * 2
         self.graph_input = graph_input
         self.encoder = MPNEncoder(self.args, self.atom_fdim, self.bond_fdim)
@@ -167,7 +166,7 @@ class MPN(nn.Module):
     def forward(self, batch: Union[List[str], BatchMolGraph],
                 features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
         if not self.graph_input:  # if features only, batch won't even be used
-            batch = mol2graph(batch, self.args)
+            batch = mol2graph(batch, no_cache=self.args.no_cache, atom_messages=self.args.atom_messages)
 
         output = self.encoder.forward(batch, features_batch)
 
