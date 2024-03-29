@@ -1,16 +1,15 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Dec  4 19:42:36 2019
-
-@author: SY
-"""
 import warnings
-warnings.filterwarnings('ignore')
+
 import pandas as pd
-from cmpnn.parsing import parse_train_args, modify_train_args
+
+from cmpnn.args import parse_train_args, modify_train_args
 from cmpnn.train import make_predictions
 
+warnings.filterwarnings('ignore')
+
+
 if __name__ == '__main__':
+
     args = parse_train_args()
     args.checkpoint_dir = './ckpt'
     modify_train_args(args)
