@@ -19,6 +19,8 @@ scikit-learn = "^1.4.1"
 # of nvidia cuda libraries that are not required for CPU
 torch = { version = "2.2.0+cpu", source = "pytorch" }
 tensorboardX = "^2.6.2.2"
+wandb = "^0.16.5"
+python-dotenv = "^1.0.1"
 
 [[tool.poetry.source]]
 name = "pytorch"
@@ -28,6 +30,9 @@ priority = "supplemental"
 [tool.poetry.dev-dependencies]
 pytest = "*"
 ipykernel = "*"
+
+[tool.poetry.scripts]
+cmpnn_train = "cmpnn.trainer:main"
 
 [build-system]
 requires = ["poetry-core"]
