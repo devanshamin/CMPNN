@@ -22,39 +22,16 @@ from cmpnn.utils import build_optimizer, build_lr_scheduler, get_loss_func, get_
     makedirs, save_checkpoint
 
 
-def run_training(args: Namespace, logger: Logger = None) -> List[float]:
-    """
-    Trains a model and returns test scores on the model checkpoint with the highest validation score.
+def get_splits(args, logger):
 
-    :param args: Arguments.
-    :param logger: Logger.
-    :return: A list of ensemble scores for each task.
-    """
-    if logger is not None:
-        debug, info = logger.debug, logger.info
-    else:
-        debug = info = print
-
-    # Set GPU
-    if args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-
-    # Print args
-# =============================================================================
-#     debug(pformat(vars(args)))
-# =============================================================================
-
-    # Get data
-    debug('Loading data')
+    logger.info('Loading data...')
     args.task_names = get_task_names(args.data_path)
     data = get_data(path=args.data_path, args=args, logger=logger)
     args.num_tasks = data.num_tasks()
     args.features_size = data.features_size()
-    debug(f'Number of tasks = {args.num_tasks}')
-    
-    
-    # Split data
-    debug(f'Splitting data with seed {args.seed}')
+    logger.info(f'Number of tasks = {args.num_tasks}')
+
+    logger.info(f'Splitting data with seed {args.seed}')
     if args.separate_test_path:
         test_data = get_data(path=args.separate_test_path, args=args, features_path=args.separate_test_features_path, logger=logger)
     if args.separate_val_path:
@@ -67,14 +44,14 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     elif args.separate_test_path:
         train_data, val_data, _ = split_data(data=data, split_type=args.split_type, sizes=(0.8, 0.2, 0.0), seed=args.seed, args=args, logger=logger)
     else:
-        print('='*100)
+        print('=' * 100)
         train_data, val_data, test_data = split_data(data=data, split_type=args.split_type, sizes=args.split_sizes, seed=args.seed, args=args, logger=logger)
 
     if args.dataset_type == 'classification':
         class_sizes = get_class_sizes(data)
-        debug('Class sizes')
+        logger.info('Class sizes')
         for i, task_class_sizes in enumerate(class_sizes):
-            debug(f'{args.task_names[i]} '
+            logger.info(f'{args.task_names[i]} '
                   f'{", ".join(f"{cls}: {size * 100:.2f}%" for cls, size in enumerate(task_class_sizes))}')
 
     if args.save_smiles_splits:
@@ -106,9 +83,32 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 split_indices.append(indices_by_smiles[smiles])
                 split_indices = sorted(split_indices)
             all_split_indices.append(split_indices)
-        with open(os.path.join(args.save_dir, 'split_indices.pckl'), 'wb') as f:
+        with open(os.path.join(args.save_dir, 'split_indices.pkl'), 'wb') as f:
             pickle.dump(all_split_indices, f)
 
+    return train_data, val_data, test_data
+
+
+def run_training(args: Namespace, logger: Logger = None) -> List[float]:
+    """
+    Trains a model and returns test scores on the model checkpoint with the highest validation score.
+
+    :param args: Arguments.
+    :param logger: Logger.
+    :return: A list of ensemble scores for each task.
+    """
+    if logger is not None:
+        debug, info = logger.debug, logger.info
+    else:
+        debug = info = print
+
+    if args.gpu is not None:
+        torch.cuda.set_device(args.gpu)
+
+    logger.info(pformat(vars(args)))
+
+    train_data, val_data, test_data = get_splits(args, logger)
+    
     if args.features_scaling:
         features_scaler = train_data.normalize_features(replace_nan_token=0)
         val_data.normalize_features(features_scaler)
@@ -118,8 +118,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     args.train_data_size = len(train_data)
     
-    debug(f'Total size = {len(data):,} | '
-          f'train size = {len(train_data):,} | val size = {len(val_data):,} | test size = {len(test_data):,}')
+    total_size = len(train_data) + len(val_data) + len(test_data)
+    logger.info(f'Total size = {total_size:,} | train size = {len(train_data):,} | val size = {len(val_data):,} | test size = {len(test_data):,}')
 
     # Initialize scaler and scale training targets by subtracting mean and dividing standard deviation (regression only)
     if args.dataset_type == 'regression':
@@ -177,9 +177,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         # Run training
         best_score = float('inf') if args.minimize_score else -float('inf')
         best_epoch, n_iter = 0, 0
+        early_stopping_counter = 0
         for epoch in range(args.epochs):
-            debug(f'Epoch {epoch}')
-
             n_iter = train(
                 model=model,
                 data=train_data,
@@ -206,20 +205,28 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
             # Average validation score
             avg_val_score = np.nanmean(val_scores)
-            debug(f'Validation {args.metric} = {avg_val_score:.6f}')
+            debug(f'Epoch {epoch} | Validation {args.metric} = {avg_val_score:.6f}')
             writer.add_scalar(f'validation_{args.metric}', avg_val_score, n_iter)
 
             if args.show_individual_scores:
                 # Individual validation scores
                 for task_name, val_score in zip(args.task_names, val_scores):
-                    debug(f'Validation {task_name} {args.metric} = {val_score:.6f}')
+                    debug(f'Epoch {epoch} | Validation {task_name} {args.metric} = {val_score:.6f}')
                     writer.add_scalar(f'validation_{task_name}_{args.metric}', val_score, n_iter)
 
             # Save model checkpoint if improved validation score
-            if args.minimize_score and avg_val_score < best_score or \
-                    not args.minimize_score and avg_val_score > best_score:
+            if (
+                (args.minimize_score and avg_val_score < best_score)
+                or (not args.minimize_score and avg_val_score > best_score)
+            ):
                 best_score, best_epoch = avg_val_score, epoch
                 save_checkpoint(os.path.join(save_dir, 'model.pt'), model, scaler, features_scaler, args)        
+                early_stopping_counter = 0
+            else:
+                early_stopping_counter += 1
+            
+            if early_stopping_counter == args.early_stopping:
+                break
 
         # Evaluate on test set using model with best validation score
         info(f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')

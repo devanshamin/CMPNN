@@ -3,15 +3,16 @@ from argparse import Namespace
 from logging import Logger
 import os
 from typing import Tuple
+import json
+from pathlib import Path
 
 from rdkit import RDLogger  
 import numpy as np
 
 from cmpnn.train.run_training import run_training
 from cmpnn.data.utils import get_task_names
-from cmpnn.utils import makedirs
-from cmpnn.args import parse_train_args, modify_train_args
-from cmpnn.utils import create_logger
+from cmpnn.utils import makedirs, create_logger
+from cmpnn.args import parse_train_args
 
 warnings.filterwarnings('ignore')
 RDLogger.DisableLog('rdApp.*')
@@ -28,7 +29,7 @@ def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float
 
     # Run training on different random seeds for each fold
     all_scores = []
-    for fold_num in range(args.num_folds):
+    for fold_num in range(1, args.num_folds):
         info(f'Fold {fold_num}')
         args.seed = init_seed + fold_num
         args.save_dir = os.path.join(save_dir, f'fold_{fold_num}')
@@ -64,8 +65,8 @@ def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float
 def main():
 
     args = parse_train_args()
-    modify_train_args(args)
     logger = create_logger(name='train', save_dir=args.save_dir, quiet=args.quiet)
+    Path(args.save_dir, "args.json").write_text(json.dumps({k: v for k, v in vars(args).items() if v}, indent=2))
     mean_auc_score, std_auc_score = cross_validate(args, logger)
     print(f'Results: {mean_auc_score:.5f} +/- {std_auc_score:.5f}')
 

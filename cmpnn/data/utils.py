@@ -123,22 +123,13 @@ def get_data(path: str,
     else:
         features_data = None
 
-    skip_smiles = set()
-
     # Load data
     with open(path) as f:
         reader = csv.reader(f)
         next(reader)  # skip header
-
         lines = []
         for line in reader:
-            smiles = line[0]
-
-            if smiles in skip_smiles:
-                continue
-
             lines.append(line)
-
             if len(lines) >= max_data_size:
                 break
 
@@ -284,9 +275,9 @@ def split_data(data: MoleculeDataset,
     elif split_type == 'scaffold_balanced':
         return scaffold_split(data, sizes=sizes, balanced=True, seed=seed, 
                               logger=logger)
-    elif split_type == 'new_scaffold_balanced':
-        return scaffold_similarity_split(data, sizes=sizes, balanced=True, 
-                                         seed=seed, logger=logger)
+    # elif split_type == 'new_scaffold_balanced':
+    #     return scaffold_similarity_split(data, sizes=sizes, balanced=True, 
+    #                                      seed=seed, logger=logger)
     
     elif split_type == 'random':
         data.shuffle(seed=seed)

@@ -1,8 +1,10 @@
 import logging
 import math
 import os
-from typing import Callable, List, Tuple, Union
+from typing import Callable, List, Tuple, Union, Optional
 from argparse import Namespace
+import time
+from pathlib import Path
 
 from sklearn.metrics import auc, mean_absolute_error, mean_squared_error, precision_recall_curve, r2_score,\
     roc_auc_score, accuracy_score, log_loss
@@ -291,7 +293,16 @@ def build_lr_scheduler(optimizer: Optimizer, args: Namespace, total_epochs: List
     )
 
 
-def create_logger(name: str, save_dir: str = None, quiet: bool = False) -> logging.Logger:
+def create_timestamp_dir(save_dir: Optional[str] = None) -> Path:
+
+    save_dir = save_dir or "ckpt"
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")  # Format the timestamp as desired
+    dir_path = Path.cwd() / f'{save_dir}/{timestamp}'  # Define the path to the parent directory
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path
+
+
+def create_logger(name: str, save_dir: str, quiet: bool = False) -> logging.Logger:
     """
     Creates a logger with a stream handler and two file handlers.
 
@@ -303,27 +314,24 @@ def create_logger(name: str, save_dir: str = None, quiet: bool = False) -> loggi
     :param quiet: Whether the stream handler should be quiet (i.e. print only important info).
     :return: The logger.
     """
+
+    log_format = "%(asctime)s | %(levelname)s | [%(filename)s:%(funcName)s:%(lineno)d] | %(message)s"
+    formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
+
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    logger.propagate = False
 
-    # Set logger depending on desired verbosity
-    ch = logging.StreamHandler()
+    stream_handler = logging.StreamHandler()
     if quiet:
-        ch.setLevel(logging.INFO)
+        stream_handler.setLevel(logging.INFO)
     else:
-        ch.setLevel(logging.DEBUG)
-    logger.addHandler(ch)
+        stream_handler.setLevel(logging.DEBUG)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
 
-    if save_dir is not None:
-        makedirs(save_dir)
-
-        fh_v = logging.FileHandler(os.path.join(save_dir, 'verbose.log'))
-        fh_v.setLevel(logging.DEBUG)
-        fh_q = logging.FileHandler(os.path.join(save_dir, 'quiet.log'))
-        fh_q.setLevel(logging.INFO)
-
-        logger.addHandler(fh_v)
-        logger.addHandler(fh_q)
+    file_handler = logging.FileHandler(os.path.join(save_dir, "debug.log"))
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
     return logger
