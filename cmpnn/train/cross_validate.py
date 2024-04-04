@@ -21,7 +21,7 @@ def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float
 
     # Run training on different random seeds for each fold
     all_scores = []
-    for fold_num in range(args.num_folds):
+    for fold_num in range(1, args.num_folds + 1):
         info(f'Fold {fold_num}')
         args.seed = init_seed + fold_num
         args.save_dir = os.path.join(save_dir, f'fold_{fold_num}')

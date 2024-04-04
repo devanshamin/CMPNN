@@ -136,3 +136,5 @@ dask-worker-space
 
 # Custom
 test_*.ipynb
+ckpt
+wandb

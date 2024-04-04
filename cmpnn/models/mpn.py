@@ -1,17 +1,20 @@
 from argparse import Namespace
 from typing import List, Union
+import math
 
 import torch
 import torch.nn as nn
 import numpy as np
+import torch.nn.functional as F
 
 from cmpnn.features import BatchMolGraph, get_atom_fdim, get_bond_fdim, mol2graph
 from cmpnn.nn_utils import index_select_ND, get_activation_function
-import math
-import torch.nn.functional as F
+
 
 class MPNEncoder(nn.Module):
+    
     def __init__(self, args: Namespace, atom_fdim: int, bond_fdim: int):
+
         super(MPNEncoder, self).__init__()
         self.atom_fdim = atom_fdim
         self.bond_fdim = bond_fdim
@@ -26,44 +29,28 @@ class MPNEncoder(nn.Module):
         self.use_input_features = args.use_input_features
         self.args = args
 
-        # Dropout
         self.dropout_layer = nn.Dropout(p=self.dropout)
-
-        # Activation
         self.act_func = get_activation_function(args.activation)
 
-        # Input
-        input_dim = self.atom_fdim
-        self.W_i_atom = nn.Linear(input_dim, self.hidden_size, bias=self.bias)
-        input_dim = self.bond_fdim
-        self.W_i_bond = nn.Linear(input_dim, self.hidden_size, bias=self.bias)
+        self.W_i_atom = nn.Linear(self.atom_fdim, self.hidden_size, bias=self.bias)
+        self.W_i_bond = nn.Linear(self.bond_fdim, self.hidden_size, bias=self.bias)
         
-        
-        w_h_input_size_atom = self.hidden_size + self.bond_fdim
-        self.W_h_atom = nn.Linear(w_h_input_size_atom, self.hidden_size, bias=self.bias)
+        # w_h_input_size_atom = self.hidden_size + self.bond_fdim
+        # self.W_h_atom = nn.Linear(w_h_input_size_atom, self.hidden_size, bias=self.bias)
         
         w_h_input_size_bond = self.hidden_size
-        
-        
         for depth in range(self.depth-1):
             self._modules[f'W_h_{depth}'] = nn.Linear(w_h_input_size_bond, self.hidden_size, bias=self.bias)
         
-        self.W_o = nn.Linear(
-                (self.hidden_size)*2,
-                self.hidden_size)
-        
-        self.gru = BatchGRU(self.hidden_size)
-        
         self.lr = nn.Linear(self.hidden_size*3, self.hidden_size, bias=self.bias)
-        
+        self.gru = BatchGRU(self.hidden_size)
+        self.W_o = nn.Linear((self.hidden_size) * 2, self.hidden_size)
 
     def forward(self, mol_graph: BatchMolGraph, features_batch=None) -> torch.FloatTensor:
 
-        f_atoms, f_bonds, a2b, b2a, b2revb, a_scope, b_scope, bonds = mol_graph.get_components()
+        f_atoms, f_bonds, a2b, b2a, b2revb, a_scope, *_ = mol_graph.get_components()
         if self.args.cuda or next(self.parameters()).is_cuda:
-            f_atoms, f_bonds, a2b, b2a, b2revb = (
-                    f_atoms.cuda(), f_bonds.cuda(), 
-                    a2b.cuda(), b2a.cuda(), b2revb.cuda())
+            f_atoms, f_bonds, a2b, b2a, b2revb = f_atoms.cuda(), f_bonds.cuda(), a2b.cuda(), b2a.cuda(), b2revb.cuda()
             
         # Input
         input_atom = self.W_i_atom(f_atoms)  # num_atoms x hidden_size
